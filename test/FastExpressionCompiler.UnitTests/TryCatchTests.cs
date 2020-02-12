@@ -3,9 +3,15 @@ using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
-using static System.Linq.Expressions.Expression;
 
+#if LIGHT_EXPRESSION
+using static FastExpressionCompiler.LightExpression.Expression;
+namespace FastExpressionCompiler.LightExpression.UnitTests
+#else
+using System.Linq.Expressions;
+using static System.Linq.Expressions.Expression;
 namespace FastExpressionCompiler.UnitTests
+#endif
 {
     [TestFixture]
     public class TryCatchTests
@@ -15,7 +21,7 @@ namespace FastExpressionCompiler.UnitTests
         {
             var expr = Lambda<Action>(TryCatch(
                     Throw(Constant(new DivideByZeroException())),
-                    Catch(typeof(DivideByZeroException), 
+                    Catch(typeof(DivideByZeroException),
                         Throw(Constant(new InvalidTimeZoneException())
                     )
                 )
@@ -60,56 +66,57 @@ namespace FastExpressionCompiler.UnitTests
 
             var expr = TryCatch(
                 Call(typeof(int).GetTypeInfo()
-                    .DeclaredMethods.First(m => m.Name == nameof(int.Parse)),
+                        .DeclaredMethods.First(m => m.Name == nameof(int.Parse)),
                     aParamExpr
                 ),
                 Catch(exParamExpr,
-                    Property(
-                        Property(exParamExpr, typeof(Exception).GetTypeInfo()
-                            .DeclaredProperties.First(p => p.Name == nameof(Exception.Message))),
-                        typeof(string).GetTypeInfo()
-                            .DeclaredProperties.First(p => p.Name == nameof(string.Length))
-                    )
-                )
+                    Condition(
+                        GreaterThan(
+                            Property(
+                                Property(exParamExpr, typeof(Exception).GetTypeInfo()
+                                    .DeclaredProperties.First(p => p.Name == nameof(Exception.Message))),
+                                typeof(string).GetTypeInfo()
+                                    .DeclaredProperties.First(p => p.Name == nameof(string.Length))
+                            ),
+                            Constant(0)),
+                        Constant(47),
+                        Constant(0)
+                    ))
             );
 
             // Test that expression is valid with system Compile
             var fExpr = Lambda<Func<string, int>>(expr, aParamExpr);
 
-            var f = fExpr.Compile();
-            Assert.AreEqual(41, f("A"));
-
             var ff = fExpr.CompileFast(ifFastFailedReturnNull: true);
             Assert.IsNotNull(ff);
 
-            Assert.AreEqual(41, ff("A"));
+            Assert.AreEqual(47, ff("A"));
             Assert.AreEqual(123, ff("123"));
         }
 
-        //TODO: Add support for usage of exception parameter in void action
-        //[Test]
-        //public void Can_use_exception_parameter()
-        //{
-        //    var exPar = Parameter(typeof(Exception), "exc");
-        //    var getExceptionMessage = typeof(Exception)
-        //        .GetProperty(nameof(Exception.Message), BindingFlags.Public | BindingFlags.Instance).GetMethod;
-        //    var writeLine = typeof(Console).GetMethod(nameof(Console.WriteLine), new [] { typeof(string) });
+        [Test]
+        public void Can_use_exception_parameter()
+        {
+            var exPar = Parameter(typeof(Exception), "exc");
+            var getExceptionMessage = typeof(Exception)
+                .GetProperty(nameof(Exception.Message), BindingFlags.Public | BindingFlags.Instance).GetMethod;
+            var writeLine = typeof(Console).GetMethod(nameof(Console.WriteLine), new[] { typeof(string) });
 
-        //    var expr = Lambda<Action>(TryCatch(
-        //        Throw(Constant(new DivideByZeroException())),
-        //        Catch(
-        //            exPar,
-        //            Call(
-        //                writeLine,
-        //                Call(exPar, getExceptionMessage)
-        //            )
-        //        )
-        //    ));
+            var expr = Lambda<Action>(TryCatch(
+                Throw(Constant(new DivideByZeroException())),
+                Catch(
+                    exPar,
+                    Call(
+                        writeLine,
+                        Call(exPar, getExceptionMessage)
+                    )
+                )
+            ));
 
-        //    var func = expr.CompileFast(true);
-        //    Assert.IsNotNull(func);
-        //    Assert.DoesNotThrow(()=> func());
-        //}
+            var func = expr.CompileFast(true);
+            Assert.IsNotNull(func);
+            Assert.DoesNotThrow(() => func());
+        }
 
         [Test]
         public void Can_return_from_catch_block()
@@ -140,6 +147,121 @@ namespace FastExpressionCompiler.UnitTests
 
             Assert.IsNotNull(func);
             Assert.Throws<DivideByZeroException>(() => func());
+        }
+
+        [Test]
+        public void Can_return_from_try_block_using_label()
+        {
+            var returnLabel = Label(typeof(string));
+
+            var expr = Lambda<Func<string>>(Block(
+                TryCatch(
+                    Return(returnLabel, Constant("From Try block"), typeof(string)),
+                    Catch(
+                        typeof(Exception),
+                        Return(returnLabel, Constant("From Catch block"), typeof(string))
+                    )
+                ),
+                Label(returnLabel, Default(returnLabel.Type))));
+
+            var func = expr.CompileFast(true);
+
+            Assert.IsNotNull(func);
+            Assert.AreEqual("From Try block", func());
+        }
+
+        [Test]
+        public void Can_return_from_catch_block_using_label()
+        {
+            var returnLabel = Label(typeof(string));
+
+            var expr = Lambda<Func<string>>(
+                Block(
+                    TryCatch(
+                        Throw(New(typeof(Exception).GetConstructor(Type.EmptyTypes)), typeof(string)),
+                        Catch(
+                            typeof(Exception),
+                            Return(returnLabel, Constant("From Catch block"), typeof(string)))
+                    ),
+                    Label(returnLabel, Default(returnLabel.Type))
+                ));
+
+            var funcSys = expr.CompileSys();
+            Assert.AreEqual("From Catch block", funcSys());
+
+            var func = expr.CompileFast(true);
+            Assert.AreEqual("From Catch block", func());
+
+            var funcWithoutClosure = expr.TryCompileWithoutClosure<Func<string>>();// ?? expr.CompileSys();
+            Assert.IsNull(funcWithoutClosure);
+        }
+
+        [Test]
+        public void Can_return_try_block_result_using_label()
+        {
+            var returnType = typeof(string);
+            var innerReturnLabel = Label(returnType);
+            var outerReturnLabel = Label(returnType);
+
+            var expr = Lambda<Func<string>>(Block(
+                TryCatch(
+                    Return(
+                        outerReturnLabel,
+                        Block(
+                            TryCatch(
+                                Return(innerReturnLabel, Constant("From inner Try block"), returnType),
+                                Catch(
+                                    typeof(Exception),
+                                    Return(innerReturnLabel, Constant("From inner Catch block"), returnType)
+                                )
+                            ),
+                            Label(innerReturnLabel, Default(innerReturnLabel.Type))),
+                        returnType),
+                    Catch(
+                        typeof(Exception),
+                        Return(outerReturnLabel, Constant("From outer Catch block"), returnType)
+                    )
+                ),
+                Label(outerReturnLabel, Default(outerReturnLabel.Type))));
+
+            var func = expr.CompileFast(true);
+
+            Assert.IsNotNull(func);
+            Assert.AreEqual("From inner Try block", func());
+        }
+
+        [Test]
+        public void Can_return_nested_catch_block_result()
+        {
+            var returnType = typeof(string);
+            var innerReturnLabel = Label(returnType);
+            var outerReturnLabel = Label(returnType);
+
+            var expr = Lambda<Func<string>>(Block(
+                TryCatch(
+                    Return(
+                        outerReturnLabel,
+                        Block(
+                            TryCatch(
+                                Throw(New(typeof(Exception).GetConstructor(Type.EmptyTypes)), returnType),
+                                Catch(
+                                    typeof(Exception),
+                                    Return(innerReturnLabel, Constant("From inner Catch block"), returnType)
+                                )
+                            ),
+                            Label(innerReturnLabel, Default(innerReturnLabel.Type))),
+                        returnType),
+                    Catch(
+                        typeof(Exception),
+                        Return(outerReturnLabel, Constant("From outer Catch block"), returnType)
+                    )
+                ),
+                Label(outerReturnLabel, Default(outerReturnLabel.Type))));
+
+            var func = expr.CompileFast(true);
+
+            Assert.IsNotNull(func);
+            Assert.AreEqual("From inner Catch block", func());
         }
     }
 }

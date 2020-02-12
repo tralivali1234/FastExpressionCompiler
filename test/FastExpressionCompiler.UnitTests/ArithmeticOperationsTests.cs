@@ -20,11 +20,11 @@ namespace FastExpressionCompiler.UnitTests
         }
 
         [Test]
-        public void Can_sum_with_ExprInfo()
+        public void Can_sum_with_manual_expr()
         {
-            var a = ExpressionInfo.Parameter(typeof(int), "a");
-            var b = ExpressionInfo.Parameter(typeof(int), "b");
-            var expr = ExpressionInfo.Lambda<Func<int, int, int>>(ExpressionInfo.Add(a, b), a, b);
+            var a = Parameter(typeof(int), "a");
+            var b = Parameter(typeof(int), "b");
+            var expr = Lambda<Func<int, int, int>>(Add(a, b), a, b);
             var sumFunc = expr.CompileFast(true);
 
             Assert.IsNotNull(sumFunc);
@@ -164,6 +164,88 @@ namespace FastExpressionCompiler.UnitTests
         }
 
         [Test]
+        public void Can_modulus_custom()
+        {
+            Expression<Func<BigInteger, BigInteger, BigInteger>> expr = (arg1, arg2) => arg1 % arg2;
+
+            var multiplyFunc = expr.CompileFast(true);
+
+            Assert.IsNotNull(multiplyFunc);
+            Assert.AreEqual(new BigInteger(1), multiplyFunc(7, 6));
+        }
+
+        [Test]
+        public void Can_modulus()
+        {
+            Expression<Func<short, short, long>> expr = (arg1, arg2) => arg1 % arg2;
+
+            var multiplyFunc = expr.CompileFast(true);
+
+            Assert.IsNotNull(multiplyFunc);
+            Assert.AreEqual(1, multiplyFunc(7, 6));
+        }
+
+        [Test]
+        public void Can_bitor_1()
+        {
+            Expression<Func<int, int, int>> expr = (arg1, arg2) => arg1 | arg2;
+
+            var multiplyFunc = expr.CompileFast(true);
+
+            Assert.IsNotNull(multiplyFunc);
+            Assert.AreEqual(1, multiplyFunc(1, 0));
+            Assert.AreEqual(1, multiplyFunc(1, 1));
+        }
+
+        [Test]
+        public void Can_bitand_1()
+        {
+            Expression<Func<int, int, int>> expr = (arg1, arg2) => arg1 & arg2;
+
+            var multiplyFunc = expr.CompileFast(true);
+
+            Assert.IsNotNull(multiplyFunc);
+            Assert.AreEqual(1, multiplyFunc(1, 1));
+            Assert.AreEqual(0, multiplyFunc(1, 0));
+        }
+
+        [Test]
+        public void Can_bitxor_1()
+        {
+            Expression<Func<int, int, int>> expr = (arg1, arg2) => arg1 ^ arg2;
+
+            var multiplyFuncO = expr.Compile();
+            var multiplyFunc = expr.CompileFast(true);
+
+            Assert.IsNotNull(multiplyFunc);
+            Assert.AreEqual(multiplyFuncO(231, 785), multiplyFunc(231, 785));
+        }
+
+        [Test]
+        public void Can_shift_left_1()
+        {
+            Expression<Func<int, int, int>> expr = (arg1, arg2) => arg1 >> arg2;
+
+            var multiplyFuncO = expr.Compile();
+            var multiplyFunc = expr.CompileFast(true);
+
+            Assert.IsNotNull(multiplyFunc);
+            Assert.AreEqual(multiplyFuncO(231, 785), multiplyFunc(231, 785));
+        }
+
+        [Test]
+        public void Can_shift_right_1()
+        {
+            Expression<Func<int, int, int>> expr = (arg1, arg2) => arg1 << arg2;
+
+            var multiplyFuncO = expr.Compile();
+            var multiplyFunc = expr.CompileFast(true);
+
+            Assert.IsNotNull(multiplyFunc);
+            Assert.AreEqual(multiplyFuncO(231, 785), multiplyFunc(231, 785));
+        }
+
+        [Test]
         public void Can_multiply_bytes()
         {
             Expression<Func<byte, byte, int>> expr = (arg1, arg2) => arg1 * arg2;
@@ -225,10 +307,10 @@ namespace FastExpressionCompiler.UnitTests
         {
             Expression<Func<int, int, int>> expr = (arg1, arg2) => arg1 / arg2;
 
-            var divideFunc = expr.CompileFast(true);
+            var func = expr.CompileFast(true);
 
-            Assert.IsNotNull(divideFunc);
-            Assert.AreEqual(divideFunc(7, 3), 2);
+            Assert.IsNotNull(func);
+            Assert.AreEqual(func(7, 3), 2);
         }
 
         [Test]
@@ -354,6 +436,28 @@ namespace FastExpressionCompiler.UnitTests
             Assert.IsNotNull(vectMethod);
             var result = vectMethod();
             Assert.AreEqual(result, new Vector2(-1.0f, -1.0f));
+        }
+
+        [Test]
+        public void Can_add_strings()
+        {
+            var s1 = "a";
+            var s2 = "b";
+            Expression<Func<string>> expr = () => s1 + s2;
+
+            var f = expr.CompileFast(true);
+            Assert.AreEqual("ab", f());
+        }
+
+        [Test]
+        public void Can_add_string_and_not_string()
+        {
+            var s1 = "a";
+            var s2 = 1;
+            Expression<Func<string>> expr = () => s1 + s2;
+
+            var f = expr.CompileFast(true);
+            Assert.AreEqual("a1", f());
         }
 
         private sealed class NonPrimitiveInt32Class

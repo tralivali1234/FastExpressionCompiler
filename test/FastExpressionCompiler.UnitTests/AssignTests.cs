@@ -2,9 +2,14 @@
 using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
-using static System.Linq.Expressions.Expression;
 
+#if LIGHT_EXPRESSION
+using static FastExpressionCompiler.LightExpression.Expression;
+namespace FastExpressionCompiler.LightExpression.UnitTests
+#else
+using static System.Linq.Expressions.Expression;
 namespace FastExpressionCompiler.UnitTests
+#endif
 {
     [TestFixture]
     public class AssignTests
@@ -24,34 +29,6 @@ namespace FastExpressionCompiler.UnitTests
         }
 
         [Test]
-        public void Can_assign_to_parameter_via_ExpressionInfo()
-        {
-            var sParamExpr = Parameter(typeof(string), "s");
-            var expr = ExpressionInfo.Lambda<Func<string, string>>(
-                ExpressionInfo.Assign(sParamExpr, ExpressionInfo.Constant("aaa")),
-                sParamExpr);
-
-            var f = expr.TryCompile();
-
-            Assert.IsNotNull(f);
-            Assert.AreEqual("aaa", f("ignored"));
-        }
-
-        [Test]
-        public void Can_assign_to_parameter_via_ExpressionInfo_with_untyped_delegate()
-        {
-            var sParamExpr = Parameter(typeof(string), "s");
-            var expr = ExpressionInfo.Lambda(
-                ExpressionInfo.Assign(sParamExpr, ExpressionInfo.Constant("aaa")),
-                sParamExpr);
-
-            var f = (Func<string, string>)expr.TryCompile();
-
-            Assert.IsNotNull(f);
-            Assert.AreEqual("aaa", f("ignored"));
-        }
-
-        [Test]
         public void Can_assign_to_parameter_in_nested_lambda()
         {
             // s => () => s = "aaa" 
@@ -61,10 +38,63 @@ namespace FastExpressionCompiler.UnitTests
                     Assign(sParamExpr, Constant("aaa"))),
                 sParamExpr);
 
+            var fs = expr.CompileSys();
+            Assert.AreEqual("aaa", fs("ignored").Invoke());
+
             var f = expr.CompileFast(true);
 
             Assert.IsNotNull(f);
-            Assert.AreEqual("aaa", f("ignored")());
+            Assert.AreEqual("aaa", f("ignored").Invoke());
+        }
+
+        [Test]
+        public void Parameter_test_try_catch_finally_result()
+        {
+            var tryCatchParameter = Variable(typeof(TryCatchTest));
+
+            var assignExpr = Lambda<Func<TryCatchTest, TryCatchTest>>(
+                Block(
+                    Assign(
+                        tryCatchParameter,
+                        TryCatch(
+                            New(tryCatchParameter.Type.GetConstructor(Type.EmptyTypes)),
+                            Catch(typeof(Exception), Default(tryCatchParameter.Type)))),
+                    tryCatchParameter
+                ),
+                tryCatchParameter);
+
+            var func = assignExpr.CompileFast(true);
+
+            Assert.IsNotNull(func);
+
+            var input = new TryCatchTest();
+            var tryCatchResult = func(input);
+            Assert.AreNotSame(input, tryCatchResult);
+            Assert.IsNotNull(tryCatchResult);
+        }
+
+        [Test]
+        public void Local_Variable_test_try_catch_finally_result()
+        {
+            var tryCatchVar = Variable(typeof(TryCatchTest));
+
+            var assignExpr = Lambda<Func<TryCatchTest>>(
+                Block(
+                    new[] { tryCatchVar },
+                    Assign(
+                        tryCatchVar,
+                        TryCatch(
+                            New(tryCatchVar.Type.GetConstructor(Type.EmptyTypes)),
+                            Catch(typeof(Exception), Default(tryCatchVar.Type)))),
+                    tryCatchVar
+                ));
+
+            var func = assignExpr.CompileFast(true);
+
+            Assert.IsNotNull(func);
+
+            var tryCatch = func();
+            Assert.IsNotNull(tryCatch);
         }
 
         [Test]
@@ -72,8 +102,7 @@ namespace FastExpressionCompiler.UnitTests
         {
             var a = new Test();
             var expr = Lambda<Func<int>>(
-               Assign(Property(Constant(a), "Prop"),
-                  Constant(5)));
+               Assign(Property(Constant(a), "Prop"), Constant(5)));
 
             var f = expr.CompileFast(true);
 
@@ -96,7 +125,96 @@ namespace FastExpressionCompiler.UnitTests
             Assert.AreEqual(5, f());
             Assert.AreEqual(5, a.Field);
         }
-        
+
+        [Test]
+        public void Member_test_block_result_should_detect_non_block_variable()
+        {
+            var testVar = Variable(typeof(Test));
+            var intVar = Variable(typeof(int));
+
+            var assignExpr = Lambda<Func<Test>>(
+                Block(
+                    Assign(testVar, New(testVar.Type.GetConstructor(Type.EmptyTypes))),
+                    Assign(
+                        Property(testVar, nameof(Test.Prop)),
+                        Block(
+                            new[] { intVar },
+                            Assign(intVar, Constant(0)),
+                            PreIncrementAssign(intVar),
+                            PreIncrementAssign(intVar),
+                            intVar)),
+                    testVar));
+
+            // InvalidOperationException:
+            // 'variable '' of type 'FastExpressionCompiler.LightExpression.UnitTests.AssignTests+Test' referenced from scope '', but it is not defined'
+            Assert.Throws<InvalidOperationException>(() => assignExpr.CompileSys());
+
+            var func = assignExpr.CompileFast(true);
+            Assert.IsNull(func);
+        }
+
+        [Test]
+        public void Member_test_block_result()
+        {
+            var testVar = Variable(typeof(Test));
+            var intVar = Variable(typeof(int));
+
+            var assignExpr = Lambda<Func<Test>>(
+                Block(new[] { testVar },
+                    Assign(testVar, New(testVar.Type.GetConstructor(Type.EmptyTypes))),
+                    Assign(
+                        Property(testVar, nameof(Test.Prop)),
+                        Block(new[] { intVar },
+                            Assign(intVar, Constant(0)),
+                            PreIncrementAssign(intVar),
+                            PreIncrementAssign(intVar),
+                            intVar)),
+                    testVar));
+
+            assignExpr.CompileSys();
+
+            var func = assignExpr.CompileFast(true);
+
+            Assert.IsNotNull(func);
+            var test = func();
+            Assert.IsNotNull(test);
+            Assert.AreEqual(2, test.Prop);
+        }
+
+        [Test]
+        public void Member_test_try_catch_finally_result()
+        {
+            var tryCatchVar = Variable(typeof(TryCatchTest));
+            var tryCatchNestedVar = Variable(typeof(TryCatchNestedTest));
+
+            var assignExpr = Lambda<Func<TryCatchTest>>(
+                TryCatch(
+                    Block(
+                        new[] { tryCatchVar },
+                        Assign(tryCatchVar, New(tryCatchVar.Type.GetConstructor(Type.EmptyTypes))),
+                        Assign(
+                            Property(tryCatchVar, nameof(TryCatchTest.NestedTest)),
+                            TryCatch(
+                                Block(
+                                    new[] { tryCatchNestedVar },
+                                    Assign(tryCatchNestedVar, New(tryCatchNestedVar.Type.GetConstructor(Type.EmptyTypes))),
+                                    Assign(Property(tryCatchNestedVar, nameof(TryCatchNestedTest.Nested)), Constant("Value")),
+                                    tryCatchNestedVar),
+                                Catch(typeof(Exception), Default(tryCatchNestedVar.Type)))),
+                        tryCatchVar
+                    ),
+                    Catch(typeof(Exception), Default(tryCatchVar.Type))));
+
+            var func = assignExpr.CompileFast(true);
+
+            Assert.IsNotNull(func);
+
+            var tryCatch = func();
+            Assert.IsNotNull(tryCatch);
+            Assert.IsNotNull(tryCatch.NestedTest);
+            Assert.AreEqual("Value", tryCatch.NestedTest.Nested);
+        }
+
         public class Test
         {
             public int Prop { get; set; }
@@ -244,6 +362,16 @@ namespace FastExpressionCompiler.UnitTests
                 get => a[i];
                 set => a[i] = value;
             }
+        }
+
+        public class TryCatchTest
+        {
+            public TryCatchNestedTest NestedTest { get; set; }
+        }
+
+        public class TryCatchNestedTest
+        {
+            public string Nested { get; set; }
         }
     }
 }

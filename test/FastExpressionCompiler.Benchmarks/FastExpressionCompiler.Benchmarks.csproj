@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp2.0;net462</TargetFrameworks>
+    <TargetFrameworks>netcoreapp2.1</TargetFrameworks>
+     <!--<TargetFrameworks>netcoreapp3.1</TargetFrameworks>--> 
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
@@ -10,11 +11,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.10.13" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.12.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\FastExpressionCompiler.LightExpression\FastExpressionCompiler.LightExpression.csproj" />
     <ProjectReference Include="..\..\src\FastExpressionCompiler\FastExpressionCompiler.csproj" />
+    <ProjectReference Include="..\FastExpressionCompiler.IssueTests\FastExpressionCompiler.IssueTests.csproj" />
+    <ProjectReference Include="..\FastExpressionCompiler.LightExpression.IssueTests\FastExpressionCompiler.LightExpression.IssueTests.csproj" />
+    <ProjectReference Include="..\FastExpressionCompiler.LightExpression.UnitTests\FastExpressionCompiler.LightExpression.UnitTests.csproj" />
     <ProjectReference Include="..\FastExpressionCompiler.UnitTests\FastExpressionCompiler.UnitTests.csproj" />
   </ItemGroup>
 

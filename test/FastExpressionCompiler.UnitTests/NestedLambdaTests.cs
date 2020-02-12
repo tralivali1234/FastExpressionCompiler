@@ -1,62 +1,25 @@
 ﻿using System;
-using System.Linq.Expressions;
 using NUnit.Framework;
-
-// ReSharper disable CompareOfFloatsByEqualityOperator
-
+#if LIGHT_EXPRESSION
+using static FastExpressionCompiler.LightExpression.Expression;
+namespace FastExpressionCompiler.LightExpression.UnitTests
+#else
+using static System.Linq.Expressions.Expression;
 namespace FastExpressionCompiler.UnitTests
+#endif
 {
     [TestFixture]
     public class NestedLambdaTests
     {
-        [Test]
-        public void Nested_lambda_using_outer_parameter()
-        {
-            // The same hoisted expression: 
-            //Expression<Func<string, string>> expr = a => GetS(() => a);
-
-            var aParam = Expression.Parameter(typeof(string), "a");
-            var expr = Expression.Lambda(
-                Expression.Call(GetType(), nameof(GetS), Type.EmptyTypes,
-                    Expression.Lambda(aParam)),
-                aParam);
-
-            var f = ExpressionCompiler.TryCompile<Func<string, string>>(expr);
-
-            Assert.AreEqual("a", f("a"));
-        }
-
+#if !LIGHT_EXPRESSION
         [Test]
         public void Nested_Hoisted_Func_using_outer_parameter()
         {
-            Expression<Func<string, string>> expr = a => GetS(() => a);
+            System.Linq.Expressions.Expression<Func<string, string>> expr = a => GetS(() => a);
 
-            var f = ExpressionCompiler.TryCompile<Func<string, string>>(expr);
+            var f = expr.TryCompile<Func<string, string>>();
 
             Assert.AreEqual("a", f("a"));
-        }
-
-        [Test]
-        public void Nested_lambda_using_outer_parameter_and_closed_value()
-        {
-            var b = new S { Value = "b" };
-
-            // The same hoisted expression: 
-            //Expression<Func<string, string>> expr = a => GetS(() => b.Append(a));
-
-            var bExpr = Expression.Constant(b);
-
-            var aParam = Expression.Parameter(typeof(string), "a");
-            var expr = Expression.Lambda(
-                Expression.Call(GetType(), nameof(GetS), Type.EmptyTypes,
-                    Expression.Lambda(
-                        Expression.Call(bExpr, "Append", Type.EmptyTypes,
-                            aParam))),
-                aParam);
-
-            var f = ExpressionCompiler.TryCompile<Func<string, string>>(expr);
-
-            Assert.AreEqual("ba", f("a"));
         }
 
         [Test]
@@ -64,9 +27,9 @@ namespace FastExpressionCompiler.UnitTests
         {
             var b = new S { Value = "b" };
 
-            Expression<Func<string, string>> expr = a => GetS(() => b.Append(a));
+            System.Linq.Expressions.Expression<Func<string, string>> expr = a => GetS(() => b.Append(a));
 
-            var f = ExpressionCompiler.TryCompile<Func<string, string>>(expr);
+            var f = expr.TryCompile<Func<string, string>>();
 
             Assert.AreEqual("ba", f("a"));
         }
@@ -76,58 +39,50 @@ namespace FastExpressionCompiler.UnitTests
         {
             // The same hoisted expression: 
             var s = new S();
-            Expression<Func<Action<string>>> expr = () => a => s.SetValue(a);
+            System.Linq.Expressions.Expression<Func<Action<string>>> expr = () => a => s.SetValue(a);
 
-            var f = ExpressionCompiler.TryCompile<Func<Action<string>>>(expr);
+            var f = expr.TryCompile<Func<Action<string>>>();
 
             f()("a");
             Assert.AreEqual("a", s.Value);
         }
-
-        [Test]
-        public void Nested_lambda_using_outer_parameter_and_closed_value_deeply_nested_lambda()
-        {
-            var b = new S { Value = "b" };
-
-            // The same hoisted expression: 
-            //Expression<Func<string, string>> expr =
-            //    a => GetS(
-            //        () => b.Prepend(a,
-            //            rest => b.Append(rest)));
-
-            var bExpr = Expression.Constant(b);
-
-            var aParam = Expression.Parameter(typeof(string), "a");
-            var bbParam = Expression.Parameter(typeof(string), "bb");
-
-            var expr = Expression.Lambda(
-                Expression.Call(GetType(), nameof(GetS), Type.EmptyTypes,
-                    Expression.Lambda(
-                        Expression.Call(bExpr, "Prepend", Type.EmptyTypes,
-                            aParam,
-                            Expression.Lambda(Expression.Call(bExpr, "Append", Type.EmptyTypes, bbParam), 
-                                bbParam)))),
-                aParam);
-
-            var f = ExpressionCompiler.TryCompile<Func<string, string>>(expr);
-
-            Assert.AreEqual("abb", f("a"));
-        }
-
         [Test]
         public void Nested_Hoisted_lambda_using_outer_parameter_and_closed_value_deeply_nested_lambda()
         {
             var b = new S { Value = "b" };
 
-            Expression<Func<string, string>> expr =
+            System.Linq.Expressions.Expression<Func<string, string>> expr =
                 a => GetS(
                     () => b.Prepend(a,
                         rest => b.Append(rest)));
 
-            var f = ExpressionCompiler.TryCompile<Func<string, string>>(expr);
+            var f = expr.TryCompile<Func<string, string>>();
 
             Assert.AreEqual("abb", f("a"));
         }
+
+        [Test]
+        public void Given_hoisted_expr_with_closure_over_parameters_in_nested_lambda_should_work()
+        {
+            System.Linq.Expressions.Expression<Func<object, object>> funcExpr = a =>
+                new Func<object>(() =>
+                    new Func<object>(() => a)())();
+
+            var func = funcExpr.Compile();
+
+            var arg1 = new object();
+            Assert.AreSame(arg1, func(arg1));
+
+            var arg2 = new object();
+            Assert.AreSame(arg2, func(arg2));
+
+            var funcFec = funcExpr.TryCompile<Func<object, object>>();
+
+            Assert.AreSame(arg1, funcFec(arg1));
+            Assert.AreSame(arg2, funcFec(arg2));
+        }
+
+#endif
 
         public static string GetS(Func<string> getS)
         {
@@ -155,53 +110,82 @@ namespace FastExpressionCompiler.UnitTests
         }
 
         [Test]
-        public void Given_hoisted_expr_with_closure_over_parameters_in_nested_lambda_should_work()
+        public void Nested_lambda_using_outer_parameter()
         {
-            Expression<Func<object, object>> funcExpr = a =>
-                new Func<object>(() =>
-                    new Func<object>(() => a)())();
+            // The same hoisted expression: 
+            //Expression<Func<string, string>> expr = a => GetS(() => a);
 
-            var func = funcExpr.Compile();
+            var aParam = Parameter(typeof(string), "a");
+            var expr = Lambda(
+                Call(GetType(), nameof(GetS), Type.EmptyTypes,
+                    Lambda(aParam)),
+                aParam);
 
-            var arg1 = new object();
-            Assert.AreSame(arg1, func(arg1));
+            var f = expr.TryCompile<Func<string, string>>();
 
-            var arg2 = new object();
-            Assert.AreSame(arg2, func(arg2));
+            Assert.AreEqual("a", f("a"));
+        }
 
-            var funcFec = ExpressionCompiler.TryCompile<Func<object, object>>(funcExpr);
+        [Test]
+        public void Nested_lambda_using_outer_parameter_and_closed_value()
+        {
+            var b = new S { Value = "b" };
 
-            Assert.AreSame(arg1, funcFec(arg1));
-            Assert.AreSame(arg2, funcFec(arg2));
+            // The same hoisted expression: 
+            //Expression<Func<string, string>> expr = a => GetS(() => b.Append(a));
+
+            var bExpr = Constant(b);
+
+            var aParam = Parameter(typeof(string), "a");
+            var expr = Lambda(
+                Call(GetType(), nameof(GetS), Type.EmptyTypes,
+                    Lambda(
+                        Call(bExpr, "Append", Type.EmptyTypes,
+                            aParam))),
+                aParam);
+
+            var f = expr.TryCompile<Func<string, string>>();
+
+            Assert.AreEqual("ba", f("a"));
+        }
+
+        [Test]
+        public void Nested_lambda_using_outer_parameter_and_closed_value_deeply_nested_lambda()
+        {
+            var b = new S { Value = "b" };
+
+            // The same hoisted expression: 
+            //Expression<Func<string, string>> expr =
+            //    a => GetS(
+            //        () => b.Prepend(a,
+            //            rest => b.Append(rest)));
+
+            var bExpr = Constant(b);
+
+            var aParam = Parameter(typeof(string), "a");
+            var bbParam = Parameter(typeof(string), "bb");
+
+            var expr = Lambda(
+                Call(GetType(), nameof(GetS), Type.EmptyTypes,
+                    Lambda(
+                        Call(bExpr, "Prepend", Type.EmptyTypes,
+                            aParam,
+                            Lambda(Call(bExpr, "Append", Type.EmptyTypes, bbParam), 
+                                bbParam)))),
+                aParam);
+
+            var f = expr.TryCompile<Func<string, string>>();
+
+            Assert.AreEqual("abb", f("a"));
         }
 
         [Test]
         public void Given_composed_expr_with_closure_over_parameters_in_nested_lambda_should_work()
         {
-            var argExpr = Expression.Parameter(typeof(object));
-            var funcExpr = Expression.Lambda(
-                Expression.Invoke(Expression.Lambda(
-                    Expression.Invoke(Expression.Lambda(argExpr)))),
-                argExpr);
-
-            var funcFec = ExpressionCompiler.TryCompile<Func<object, object>>(funcExpr);
-
-            var arg1 = new object();
-            Assert.AreSame(arg1, funcFec(arg1));
-
-            var arg2 = new object();
-            Assert.AreSame(arg2, funcFec(arg2));
-
-            Assert.AreSame(arg1, funcFec(arg1));
-        }
-
-        [Test]
-        public void Given_composed_exprInfo_with_closure_over_parameters_in_nested_lambda_should_work()
-        {
-            var argExpr = Expression.Parameter(typeof(object));
-            var funcExpr = ExpressionInfo.Lambda(
-                ExpressionInfo.Invoke(ExpressionInfo.Lambda(
-                    ExpressionInfo.Invoke(ExpressionInfo.Lambda(argExpr)))),
+            var argExpr = Parameter(typeof(object));
+            var funcExpr = Lambda(
+                Invoke(Lambda(
+                    Invoke(Lambda(argExpr)))),
                 argExpr);
 
             var funcFec = funcExpr.TryCompile<Func<object, object>>();
@@ -220,14 +204,14 @@ namespace FastExpressionCompiler.UnitTests
         {
             //Func<A, A> funcEthalon = a => a.Increment(() => a.Increment(() => a.Increment(null)));
 
-            var aExpr = Expression.Parameter(typeof(A));
-            var funcExpr = Expression.Lambda(
-                Expression.Call(aExpr, "Increment", new Type[0],
-                    Expression.Lambda(
-                        Expression.Call(aExpr, "Increment", new Type[0],
-                            Expression.Lambda(
-                                Expression.Call(aExpr, "Increment", new Type[0],
-                                    Expression.Constant(null, typeof(Func<A>))
+            var aExpr = Parameter(typeof(A));
+            var funcExpr = Lambda(
+                Call(aExpr, "Increment", new Type[0],
+                    Lambda(
+                        Call(aExpr, "Increment", new Type[0],
+                            Lambda(
+                                Call(aExpr, "Increment", new Type[0],
+                                    Constant(null, typeof(Func<A>))
                                 )
                             )
                         )
@@ -235,7 +219,7 @@ namespace FastExpressionCompiler.UnitTests
                 ),
                 aExpr);
 
-            var func = ExpressionCompiler.TryCompile<Func<A, A>>(funcExpr);
+            var func = funcExpr.TryCompile<Func<A, A>>();
 
             var a1 = new A();
             var result1 = func(a1);
@@ -249,34 +233,39 @@ namespace FastExpressionCompiler.UnitTests
         [Test]
         public void Given_composed_expr_with_closure_over_2_parameters_used_in_2_levels_of_nested_lambda()
         {
-            Func<A, A, A> funcEthalon = (a, b) => a.Increment(b, () => a.Increment(b, () => a.Increment(b, null)));
+            Func<A, A, A> funcEthalon = (a, b) => a.Increment(b, () => a.Increment(b, () => a.Increment(b, null, null), () => a), () => a);
             var aa = new A();
             var bb = new A();
             funcEthalon(aa, bb);
             Assert.AreEqual(3, aa.X);
             Assert.AreEqual(-3, bb.X);
 
-            var aExpr = Expression.Parameter(typeof(A), "a");
-            var bExpr = Expression.Parameter(typeof(A), "b");
+            var aExpr = Parameter(typeof(A), "a");
+            var bExpr = Parameter(typeof(A), "b");
 
-            var funcExpr = Expression.Lambda(
-                Expression.Call(aExpr, "Increment", new Type[0],
+            var aLambdaExpr = Lambda(aExpr);
+            var aNullLambdaExpr = Constant(null, typeof(Func<A>));
+            var funcExpr = Lambda(
+                Call(aExpr, "Increment", new Type[0],
                     bExpr,
-                    Expression.Lambda(
-                        Expression.Call(aExpr, "Increment", new Type[0],
+                    Lambda(
+                        Call(aExpr, "Increment", new Type[0],
                             bExpr,
-                            Expression.Lambda(
-                                Expression.Call(aExpr, "Increment", new Type[0],
+                            Lambda(
+                                Call(aExpr, "Increment", new Type[0],
                                     bExpr,
-                                    Expression.Constant(null, typeof(Func<A>))
+                                    aNullLambdaExpr,
+                                    aNullLambdaExpr
                                 )
-                            )
+                            ),
+                            aLambdaExpr
                         )
-                    )
+                    ),
+                    aLambdaExpr
                 ),
                 aExpr, bExpr);
 
-            var func = ExpressionCompiler.TryCompile<Func<A, A, A>>(funcExpr);
+            var func = funcExpr.TryCompile<Func<A, A, A>>();
 
             var a1 = new A();
             var b1 = new A();
@@ -292,32 +281,35 @@ namespace FastExpressionCompiler.UnitTests
         [Test]
         public void Given_composed_expr_with_closure_over_2_same_parameters_used_in_2_levels_of_nested_lambda()
         {
-            Func<A, A, A> funcEthalon = (a, b) => a.Increment(b, () => a.Increment(b, () => a.Increment(b, null)));
+            Func<A, A, A> funcEthalon = (a, b) => a.Increment(b, () => a.Increment(b, () => a.Increment(b, null, null), () => a), () => a);
             var aa = new A();
             funcEthalon(aa, aa);
             Assert.AreEqual(0, aa.X);
 
-            var aExpr = Expression.Parameter(typeof(A));
-            var bExpr = Expression.Parameter(typeof(A));
+            var aExpr = Parameter(typeof(A));
+            var bExpr = Parameter(typeof(A));
 
-            var funcExpr = Expression.Lambda(
-                Expression.Call(aExpr, "Increment", new Type[0],
+            var funcExpr = Lambda(
+                Call(aExpr, "Increment", new Type[0],
                     aExpr,
-                    Expression.Lambda(
-                        Expression.Call(aExpr, "Increment", new Type[0],
+                    Lambda(
+                        Call(aExpr, "Increment", new Type[0],
                             aExpr,
-                            Expression.Lambda(
-                                Expression.Call(aExpr, "Increment", new Type[0],
+                            Lambda(
+                                Call(aExpr, "Increment", new Type[0],
                                     aExpr,
-                                    Expression.Constant(null, typeof(Func<A>))
+                                    Constant(null, typeof(Func<A>)),
+                                    Constant(null, typeof(Func<A>))
                                 )
-                            )
+                            ),
+                            Lambda(aExpr)
                         )
-                    )
+                    ),
+                    Lambda(aExpr)
                 ),
                 aExpr, bExpr);
 
-            var func = ExpressionCompiler.TryCompile<Func<A, A, A>>(funcExpr);
+            var func = funcExpr.TryCompile<Func<A, A, A>>();
 
             var a1 = new A();
             var result1 = func(a1, a1);
@@ -340,7 +332,7 @@ namespace FastExpressionCompiler.UnitTests
                 return then();
             }
 
-            public A Increment(A b, Func<A> then)
+            public A Increment(A b, Func<A> then, Func<A> then2)
             {
                 X += 1;
                 b.X -= 1;
@@ -348,6 +340,49 @@ namespace FastExpressionCompiler.UnitTests
                     return this;
                 return then();
             }
+        }
+
+        [Test]
+        public void Two_same_nested_lambdas_should_compile_once()
+        {
+            var n = Parameter(typeof(int), "n");
+            var add = Lambda<Func<int, int>>(Add(n, Constant(1)), n);
+
+            var m = Parameter(typeof(int), "m");
+            var sub = Lambda<Func<int, int>>(Subtract(
+                m, Invoke(add, Constant(5))), 
+                m);
+
+            var e = Lambda<Func<int>>(
+                Add(Invoke(sub, Constant(42)), 
+                    Invoke(add, Constant(13))));
+
+            var f = e.CompileFast(true);
+            Assert.IsNotNull(f);
+            Assert.AreEqual(50, f());
+        }
+
+        [Test]
+        public void Hmm_I_can_use_the_same_parameter_for_outer_and_nested_lambda()
+        {
+            var nParam = Parameter(typeof(int), "n");
+            var add = Lambda<Func<int, int>>(
+                Add(nParam, Constant(1)), 
+                nParam);
+
+            var sub = Lambda<Func<int, int>>(
+                Subtract(nParam, Invoke(add, nParam)),
+                nParam);
+
+            var e = Lambda<Func<int>>(
+                Add(Invoke(sub, Constant(42)),
+                    Invoke(add, Constant(13))));
+
+            var fs =  e.CompileSys();
+            Assert.AreEqual(13, fs());
+
+            var f = e.CompileFast(true);
+            Assert.AreEqual(13, f());
         }
     }
 }

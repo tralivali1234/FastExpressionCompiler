@@ -2,13 +2,10 @@
 
 set -euo pipefail
 
-dotnet restore
+dotnet restore -p:SourceLink=false;DevMode=false
 
-if test "$TRAVIS_OS_NAME" != "osx";
-then 
-dotnet test test/FastExpressionCompiler.IssueTests/FastExpressionCompiler.IssueTests.csproj -c Release -f netcoreapp1.1;
-dotnet test test/FastExpressionCompiler.UnitTests/FastExpressionCompiler.UnitTests.csproj -c Release -f netcoreapp1.1;
-fi
+dotnet test test/FastExpressionCompiler.IssueTests/FastExpressionCompiler.IssueTests.csproj -c:Release -f:netcoreapp2.0 -p:Sign=false;SourceLink=false;DevMode=false
+dotnet test test/FastExpressionCompiler.UnitTests/FastExpressionCompiler.UnitTests.csproj   -c:Release -f:netcoreapp2.0 -p:Sign=false;SourceLink=false;DevMode=false
 
-dotnet test test/FastExpressionCompiler.IssueTests/FastExpressionCompiler.IssueTests.csproj -c Release -f netcoreapp2.0;
-dotnet test test/FastExpressionCompiler.UnitTests/FastExpressionCompiler.UnitTests.csproj -c Release -f netcoreapp2.0;
+dotnet test test/FastExpressionCompiler.LightExpression.IssueTests/FastExpressionCompiler.LightExpression.IssueTests.csproj -c:Release -f:netcoreapp2.0 -p:Sign=false;SourceLink=false;DevMode=false
+dotnet test test/FastExpressionCompiler.LightExpression.UnitTests/FastExpressionCompiler.LightExpression.UnitTests.csproj   -c:Release -f:netcoreapp2.0 -p:Sign=false;SourceLink=false;DevMode=false
